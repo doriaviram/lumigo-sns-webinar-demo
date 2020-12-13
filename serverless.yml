@@ -1,0 +1,108 @@
+service:
+  name: webinar-demo
+
+custom:
+  lumigo:
+    token: t_bae4dfee43f34ba99e754
+
+provider:
+  name: aws
+  region: us-west-1
+  runtime: nodejs12.x
+  memorySize: 512
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:*
+      Resource:
+        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:service.name}-Users
+    - Effect: Allow
+      Action:
+        - SNS:*
+      Resource:
+        - arn:aws:sns:${self:provider.region}:*:${self:service.name}-*
+    - Effect: Allow
+      Action:
+        - SQS:*
+      Resource:
+        - arn:aws:sqs:${self:provider.region}:*:${self:service.name}-*
+
+
+functions:
+  s1-signup:
+    handler: dist/functions/s1/signup.handler
+
+  s2-signup:
+    handler: dist/functions/s2/signup.handler
+
+  s2-order-tshirt:
+    handler: dist/functions/s2/order-tshirt.handler
+    events:
+      - sns:
+          arn: !Ref SignupTopic
+          topicName: ${self:service.name}-UserSignupTopic
+
+  s2-send-mail:
+    handler: dist/functions/s2/send-mail.handler
+    events:
+      - sns:
+          arn: !Ref SignupTopic
+          topicName: ${self:service.name}-UserSignupTopic
+
+  s3-signup:
+    handler: dist/functions/s3/signup.handler
+
+  s3-publish-to-sqs:
+    handler: dist/functions/s3/publish-to-sqs.handler
+    events:
+      - sns:
+          arn: !Ref S3SignupTopic
+          topicName: ${self:service.name}-S3UserSignupTopic
+
+  s3-order-tshirt:
+    handler: dist/functions/s3/order-tshirt.handler
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - S3TShirtQueue
+              - Arn
+
+  s3-send-mail:
+    handler: dist/functions/s3/send-mail.handler
+    events:
+      - sns:
+          arn: !Ref S3SignupTopic
+          topicName: ${self:service.name}-S3UserSignupTopic
+
+plugins:
+  - serverless-lumigo
+
+resources:
+  Description: "---"
+  Resources:
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service.name}-Users
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+    SignupTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        DisplayName: 'sinuptopic'
+        TopicName: ${self:service.name}-UserSignupTopic
+    S3SignupTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        DisplayName: 'sinuptopic'
+        TopicName: ${self:service.name}-S3UserSignupTopic
+    S3TShirtQueue:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: ${self:service.name}-S3TShirtQueue
